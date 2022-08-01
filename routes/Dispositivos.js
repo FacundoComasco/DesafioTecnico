@@ -61,7 +61,7 @@ Dispositivos.post('/',upload.single('file'), async (req,res) =>{
         parse(data, async (err, records) => {
           if (err) {
             console.error(err)
-            return res.status(400).json({err: 'Error en lectura de csv'})
+            return res.status(Number(process.env.Sensor_csv_Err)).json({err: 'Error en lectura de csv'})
           }
       
           for(var i=0;i<records[0].length;i++){               
@@ -95,22 +95,62 @@ Dispositivos.post('/',upload.single('file'), async (req,res) =>{
     }
      
 });
-Dispositivos.delete('/', async (req,res) =>{    
+Dispositivos.delete('/',upload.single('file'), async (req,res) =>{    
     //Debe venir el id en el body del alta en formato json
     const {Id} = req.body;
-    if(!Id)return res.status(Number(process.env.Sensor_Consulta_Invalida)).send({err: "No hay 'ID' en la consulta"});
+    if(req.file===undefined){
+        if(!Id)return res.status(Number(process.env.Sensor_Consulta_Invalida)).send({err: "No hay 'ID' en la consulta"});
    
-    const Sensor = await Tabla_Sensores.findById(Id).exec();   
-    if(Sensor === null){
-          //No existe         
-          return res.status(Number(process.env.Sensor_Baja_err0)).send({msg: "Sensor inexistente"});   
+        const Sensor = await Tabla_Sensores.findById(Id).exec();   
+        if(Sensor === null){
+              //No existe         
+              return res.status(Number(process.env.Sensor_Baja_err0)).send({msg: "Sensor inexistente"});   
+        }
+        else{
+            //El sensor que se quiere dar de alta ya existe
+            await mongoose.connection.db.dropCollection(Id, function(err, result) {console.log(err)});   
+            await Sensor.remove();        
+            return res.status(Number(process.env.Sensor_Baja_Ok)).send({msg: "Dispositivo eliminado"});
+        }
     }
     else{
-        //El sensor que se quiere dar de alta ya existe
-        await mongoose.connection.db.dropCollection(Id, function(err, result) {console.log(err)});   
-        await Sensor.remove();        
-        return res.status(Number(process.env.Sensor_Baja_Ok)).send({msg: "Dispositivo eliminado"});
+        const data = fs.readFileSync(req.file.path)
+        parse(data, async (err, records) => {
+          if (err) {
+            console.error(err)
+            return res.status(Number(process.env.Sensor_csv_Err)).json({err: 'Error en lectura de csv'})
+          }
+      
+          for(var i=0;i<records[0].length;i++){               
+                var Valido=1;
+                var ID=records[0][i];                    
+                for(var j=0;j<ID.length;j++)
+                if(LETRAS_PERMITIDAS.indexOf(ID[j]) == -1) {
+                  Valido=0;
+                }
+                if(Valido==1){
+                    const Sensor = await Tabla_Sensores.findById(ID).exec();   
+                    if(Sensor === null){
+                        //No existe
+                        console.log("El elemento " + i +"("+ID+") No se encuentra dado de alta");    
+                        
+                    }
+                    else{
+                        //Existe y lo borramos  
+                        await mongoose.connection.db.dropCollection(ID, function(err, result) {console.log(err)});   
+                        await Sensor.remove();        
+                        console.log("Dispositivo eliminado " + ID );
+                    }  
+                }               
+                else{
+                    console.log("El elemento " +i + "posee caracteres no permitidos");
+                }
+               
+            }
+            return res.status(Number(process.env.OK)).send({msg: "Finalizado borrado por csv"});
+        })
     }
+   
     
 });
 
